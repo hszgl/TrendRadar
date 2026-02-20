@@ -1,125 +1,82 @@
 name: crawler
 
 on:
+  workflow_dispatch:  # 先测试手动触发
   schedule:
-    - cron: '0 * * * *'  # 每小时运行一次
-  workflow_dispatch:     # 允许手动触发
+    - cron: '0 * * * *'
 
 jobs:
   run-crawler:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v3.5.3
-    
-    - name: Set up Python
-      uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v4.6.1
-      with:
-        python-version: '3.9'
-    
-    - name: Install dependencies
+    # 1. 手动检出代码（核心）
+    - name: Download Repository
       run: |
-        python -m pip install --upgrade pip
-        pip install requests beautifulsoup4 feedparser
+        echo "📥 Downloading repository..."
+        # 使用GitHub API下载仓库
+        curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/hszgl/TrendRadar/tarball/main \
+          -o repo.tar.gz
+        
+        # 解压
+        tar -xzf repo.tar.gz
+        # 复制文件到工作区
+        cp -r hszgl-TrendRadar-*/* .
+        cp -r hszgl-TrendRadar-*/.[^.]* . 2>/dev/null || true
+        
+        echo "✅ Repository downloaded"
     
-    - name: Create config directory
-      run: mkdir -p config
-    
-    - name: Create frequency_words.txt
+    # 2. 手动设置Python
+    - name: Prepare Python
       run: |
-        if [ ! -f config/frequency_words.txt ]; then
-          cat > config/frequency_words.txt << 'EOF'
-        # 高频词汇列表
-        AI
-        人工智能
-        科技
-        数据
-        互联网
-        投资
-        市场
-        政策
-        教育
-        医疗
-        汽车
-        金融
-        房地产
-        游戏
-        电影
-        经济
-        股票
-        基金
-        EOF
-          echo "✅ Created frequency_words.txt"
-        else
-          echo "📁 frequency_words.txt already exists"
-        fi
-    
-    - name: Run crawler script
+        echo "🐍 Python version:"
+        python3 --version
+        # 确保pip可用
+        python3 -m ensurepip --upgrade
+        
+    # 3. 运行爬虫
+    - name: Run Simple Crawler
       run: |
-        # 创建简化的爬虫脚本
-        cat > temp_crawler.py << 'EOF'
+        # 创建最简单的测试脚本
+        cat > test.py << 'EOF'
         import requests
-        from bs4 import BeautifulSoup
-        import feedparser
         import json
-        import time
+        import os
         from datetime import datetime
         
-        print("🚀 Starting crawler...")
+        print("🚀 Starting simple crawler test...")
         
-        # 尝试获取知乎热榜
-        try:
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.get('https://www.zhihu.com/billboard', headers=headers)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            print("✅ Successfully fetched Zhihu hotlist")
-            
-            # 创建输出目录
-            import os
-            os.makedirs('output', exist_ok=True)
-            
-            # 保存结果
-            result = {
-                'timestamp': datetime.now().isoformat(),
-                'platforms': ['Zhihu'],
-                'message': 'Crawler executed successfully',
-                'total_items': 1
-            }
-            
-            with open('output/result.json', 'w', encoding='utf-8') as f:
-                json.dump(result, f, ensure_ascii=False, indent=2)
-            
-            print("✅ Results saved to output/result.json")
-            
-        except Exception as e:
-            print(f"❌ Error occurred: {str(e)}")
-            # 创建错误输出
-            import os
-            os.makedirs('output', exist_ok=True)
-            with open('output/error.log', 'w') as f:
-                f.write(f"Error at {datetime.now().isoformat()}: {str(e)}")
+        # 创建输出目录
+        os.makedirs('output', exist_ok=True)
         
-        print("🏁 Crawler finished")
+        # 收集结果
+        result = {
+            'status': 'success',
+            'timestamp': datetime.now().isoformat(),
+            'message': 'Hello from GitHub Actions!',
+            'test': 'This is working!'
+        }
+        
+        # 保存结果
+        with open('output/test_result.json', 'w') as f:
+            json.dump(result, f, indent=2)
+        
+        print("✅ Test completed!")
+        print(json.dumps(result, indent=2))
         EOF
         
-        # 运行爬虫脚本
-        python temp_crawler.py
+        python3 test.py
     
-    - name: Check output
+    # 4. 上传结果（可选）
+    - name: Upload Results
       run: |
-        if [ -f "output/result.json" ]; then
-          echo "📊 Output file exists:"
-          cat output/result.json
-        elif [ -f "output/error.log" ]; then
-          echo "⚠️ Error log exists:"
-          cat output/error.log
-        else:
-          echo "❌ No output found"
-    
-    - name: Archive results
-      if: always()
-      uses: actions/upload-artifact@83fd05a356d7e2593de66fc9913b3002723633cb  # v3.1.3
-      with:
-        name: crawler-results
-        path: output/
+        echo "📤 Uploading results..."
+        if [ -f "output/test_result.json" ]; then
+          echo "📊 Results found:"
+          cat output/test_result.json
+          echo "✅ Workflow completed successfully!"
+        else
+          echo "⚠️ No results found"
+        fi
