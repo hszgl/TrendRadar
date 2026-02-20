@@ -1,65 +1,68 @@
-name: Hot News Crawler
+name: crawler
 
 on:
   schedule:
-    # 我们使用的是 github 官方提供的资源来进行的推送，而每个账号的资源是限额的，为了不被官方判定为滥用而面临封号的风险，不建议比半小时更低
-    - cron: "0 * * * *" # 每小时整点运行一次(实际有偏差) 或者 "*/30 * * * *" (每半小时执行一次) 或者 "*/30 0-14 * * *"(每天早上 8 点到晚上 10 点期间，每半小时运行一次)
-  workflow_dispatch:
-
-# 添加权限设置
-permissions:
-  contents: write
+    - cron: '0 * * * *'  # 每小时运行一次（整点运行）
+  workflow_dispatch:     # 允许手动触发运行
 
 jobs:
-  crawl:
+  run-crawler:
     runs-on: ubuntu-latest
-
+    
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.9"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          playwright install --with-deps
-
-      - name: Verify required files
-        run: |
-          echo "🔍 检查必需的配置文件..."
-
-          if [ ! -f config/config.yaml ]; then
-            echo "❌ 错误: config/config.yaml 文件不存在"
-            echo "请参考项目文档创建配置文件"
-            exit 1
-          fi
-
-          if [ ! -f config/frequency_words.txt ]; then
-            echo "❌ 错误: config/frequency_words.txt 文件不存在"
-            echo "请参考项目文档创建频率词配置文件"
-            exit 1
-          fi
-
-          echo "✅ 配置文件检查通过"
-
-      - name: Run crawler
-        env:
-          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          DINGTALK_WEBHOOK_URL: ${{ secrets.DINGTALK_WEBHOOK_URL }}
-          WEWORK_WEBHOOK_URL: ${{ secrets.WEWORK_WEBHOOK_URL }}
-          GITHUB_ACTIONS: true
-        run: python main.py
-
-      - name: Commit and push if changes
-        run: |
-          git config --global user.name 'GitHub Actions'
-          git config --global user.email 'actions@github.com'
-          git add -A
-          git diff --quiet && git diff --staged --quiet || (git commit -m "Auto update by GitHub Actions at $(TZ=Asia/Shanghai date)" && git push)
+    - name: Checkout repository
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests beautifulsoup4 feedparser
+    
+    - name: Run crawler
+      run: python main.py
+    
+    - name: Send WeWork notification
+      if: always()  # 即使爬虫失败也发送通知
+      env:
+        WEWORK_WEBHOOK_URL: ${{ secrets.WEWORK_WEBHOOK_URL }}
+      run: |
+        python -c "
+        import json
+        import os
+        import requests
+        
+        webhook_url = os.environ.get('WEWORK_WEBHOOK_URL')
+        if not webhook_url:
+            print('❌ WEWORK_WEBHOOK_URL not set')
+            exit(1)
+        
+        # 读取输出文件
+        try:
+            with open('output/hot_news.txt', 'r', encoding='utf-8') as f:
+                content = f.read()
+        except FileNotFoundError:
+            content = '⚠️ Crawler ran but no output found. Check the workflow logs.'
+        
+        # 构建企业微信消息
+        message = {
+            'msgtype': 'markdown',
+            'markdown': {
+                'content': f'## 📊 TrendRadar 热点报告\n\n{content}'
+            }
+        }
+        
+        # 发送消息
+        try:
+            response = requests.post(webhook_url, json=message, timeout=10)
+            if response.status_code == 200:
+                print('✅ Notification sent successfully')
+            else:
+                print(f'❌ Failed to send notification: {response.text}')
+        except Exception as e:
+            print(f'❌ Error sending notification: {e}')
+        "
