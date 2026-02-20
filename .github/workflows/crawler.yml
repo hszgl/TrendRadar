@@ -35,10 +35,8 @@ jobs:
         AI
         人工智能
         科技
-        数据
         互联网
         投资
-        市场
         政策
         教育
         医疗
@@ -52,7 +50,6 @@ jobs:
         基金
         数字货币
         元宇宙
-        EOF
           echo "✅ Created frequency_words.txt"
         else
           echo "📁 frequency_words.txt already exists"
